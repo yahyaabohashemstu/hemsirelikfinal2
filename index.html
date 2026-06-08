@@ -485,6 +485,18 @@
   .test-tab.tab-vize .orig-icon{color:#2dd4bf}
   .test-tab.tab-vize.active .orig-icon{color:#042f2a}
 
+  /* "reveal all answers" controls */
+  .answer-controls{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin:0 auto 26px;padding:0 20px}
+  .ans-btn{display:inline-flex;align-items:center;gap:8px;padding:11px 20px;border-radius:var(--radius-sm);font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;border:1px solid var(--border-strong);transition:transform .15s ease, filter .2s ease, background .2s ease, color .2s ease}
+  .ans-btn svg{width:17px;height:17px}
+  .ans-btn:active{transform:scale(.97)}
+  .ans-reveal{background:var(--accent-grad);color:#fff;border-color:transparent;box-shadow:var(--shadow-md)}
+  .ans-reveal:hover{filter:brightness(1.12)}
+  .ans-hide{background:var(--glass);color:var(--text-dim)}
+  .ans-hide:hover{background:var(--glass-strong);color:var(--text)}
+  /* revealed (answer-key) question state */
+  .q-card.revealed{border-color:rgba(124,92,255,0.5);box-shadow:0 0 0 1px rgba(124,92,255,0.22)}
+  .verdict.v-reveal{background:rgba(124,92,255,0.12);color:#c4b5ff;border:1px solid rgba(124,92,255,0.4)}
 </style>
 </head>
 <body>
@@ -541,6 +553,17 @@
       <button class="test-tab" role="tab" data-test="5">ÜROLOJİ CERRAHİSİ VE HEMŞİRELİK BAKIMI SINAVI<span class="test-tab-badge">30</span></button>
     </div>
   </section>
+
+  <div class="answer-controls">
+    <button id="reveal-all-btn" class="ans-btn ans-reveal" type="button" onclick="revealAllAnswers()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+      Tüm Cevapları Göster
+    </button>
+    <button id="hide-all-btn" class="ans-btn ans-hide" type="button" onclick="hideAllAnswers()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+      Cevapları Gizle
+    </button>
+  </div>
 
   <section class="questions" id="questions"></section>
 
@@ -749,11 +772,22 @@ function checkAnswer(qi){
   if (state.answered[qi]) return;
   const sel = state.selected[qi];
   if (sel === null) return;
+  state.answered[qi] = true;
+  state.results[qi] = sel === QUESTIONS[qi].correct;
+  applyAnsweredVisual(qi);
+  const card = document.getElementById(`q-${qi}`);
+  if (state.results[qi]) card.classList.add('pulse-success');
+  else card.classList.add('shake');
+  updateStats();
+}
+
+// Renders the answered visual for a question from `state`.
+// Used by checkAnswer and to restore genuine answers after hiding the revealed key.
+function applyAnsweredVisual(qi){
   const q = QUESTIONS[qi];
   const correct = q.correct;
-  const isRight = sel === correct;
-  state.answered[qi] = true;
-  state.results[qi] = isRight;
+  const sel = state.selected[qi];
+  const isRight = state.results[qi];
 
   const card = document.getElementById(`q-${qi}`);
   const opts = document.querySelectorAll(`#opts-${qi} .option`);
@@ -770,8 +804,6 @@ function checkAnswer(qi){
   });
 
   card.classList.add(isRight ? 'answered-correct' : 'answered-wrong');
-  if (isRight) card.classList.add('pulse-success');
-  else card.classList.add('shake');
 
   const verdict = document.getElementById(`verdict-${qi}`);
   if (isRight) {
@@ -789,9 +821,60 @@ function checkAnswer(qi){
   }
 
   const btn = document.querySelector(`.check-btn[data-q="${qi}"]`);
-  btn.disabled = true;
-  btn.style.opacity = '.35';
+  if (btn) { btn.disabled = true; btn.style.opacity = '.35'; }
+}
 
+// "Tüm Cevapları Göster": reveals the correct answer for every not-yet-answered
+// question (answer-key view). Does not affect the score.
+function revealAllAnswers(){
+  QUESTIONS.forEach((item, idx) => {
+    if (item.essay) {
+      const box = document.getElementById(`essay-${idx}`);
+      if (box) box.hidden = false;
+      const rb = document.querySelector(`.reveal-btn[data-essay="${idx}"]`);
+      if (rb) { rb.classList.add('open'); const sp = rb.querySelector('span'); if (sp) sp.textContent = 'Model Cevabı Gizle'; }
+      return;
+    }
+    if (state.answered[idx]) return; // genuinely answered → already shows the answer
+    const opts = document.querySelectorAll(`#opts-${idx} .option`);
+    opts.forEach((o,i)=>{
+      o.classList.add('disabled');
+      if (i === item.correct) {
+        o.classList.add('correct');
+        const slot = o.querySelector('.opt-icon-slot');
+        if (slot) slot.innerHTML = ICON_CHECK;
+      }
+    });
+    const card = document.getElementById(`q-${idx}`);
+    if (card) card.classList.add('revealed');
+    const verdict = document.getElementById(`verdict-${idx}`);
+    if (verdict) {
+      verdict.className = 'verdict v-reveal show';
+      verdict.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/></svg> Doğru cevap: <strong style="margin-inline:4px">${LETTERS[item.correct]}</strong>`;
+    }
+    if (item.exp) {
+      const ex = document.getElementById(`exp-${idx}`);
+      if (ex) { ex.innerHTML = `<strong>Açıklama:</strong> ${escapeHtml(item.exp)}`; ex.hidden = false; }
+    }
+    const btn = document.querySelector(`.check-btn[data-q="${idx}"]`);
+    if (btn) { btn.disabled = true; btn.style.opacity = '.35'; }
+  });
+}
+
+// "Cevapları Gizle": undoes reveal — rebuilds clean, then restores the user's own answers/selections.
+function hideAllAnswers(){
+  renderAll();
+  QUESTIONS.forEach((item, idx) => {
+    if (item.essay) return;
+    if (state.answered[idx]) {
+      applyAnsweredVisual(idx);
+    } else if (state.selected[idx] != null) {
+      const o = document.querySelector(`#opts-${idx} .option[data-idx="${state.selected[idx]}"]`);
+      if (o) o.classList.add('selected');
+      const b = document.querySelector(`.check-btn[data-q="${idx}"]`);
+      if (b) b.disabled = false;
+    }
+  });
   updateStats();
 }
 
